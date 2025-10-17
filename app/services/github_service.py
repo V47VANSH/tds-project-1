@@ -92,30 +92,40 @@ class GitHubService:
             logger.error(f"Error pushing files: {e}")
             raise
     
-    async def enable_github_pages(self, repo_name: str) -> str:
+    async def enable_github_pages(self, repo_name: str, branch: str = "main") -> str:
         """
-        Enable GitHub Pages for the repository
+        Enable GitHub Pages for a repository
         """
         try:
             repo = self.user.get_repo(repo_name)
             
-            # Enable Pages with main branch
-            try:
-                repo.create_pages_site(source={"branch": "main", "path": "/"})
-                logger.info(f"Enabled GitHub Pages for {repo_name}")
-            except GithubException as e:
-                if "already enabled" in str(e).lower():
-                    logger.info(f"GitHub Pages already enabled for {repo_name}")
-                else:
-                    logger.warning(f"Could not enable Pages: {e}")
+            # Use the REST API directly to enable Pages
+            url = f"https://api.github.com/repos/{settings.github_username}/{repo_name}/pages"
+            headers = {
+                "Authorization": f"token {settings.github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28"
+            }
+            data = {
+                "source": {
+                    "branch": branch,
+                    "path": "/"
+                }
+            }
             
-            # Construct Pages URL
-            pages_url = f"https://{self.username}.github.io/{repo_name}/"
+            import requests
+            response = requests.post(url, json=data, headers=headers)
             
-            return pages_url
-            
+            # 201 = created, 409 = already exists
+            if response.status_code in [201, 409]:
+                pages_url = f"https://{settings.github_username}.github.io/{repo_name}/"
+                logger.info(f"GitHub Pages enabled: {pages_url}")
+                return pages_url
+            else:
+                response.raise_for_status()
+                
         except Exception as e:
-            logger.error(f"Error enabling GitHub Pages: {e}")
+            logger.error(f"Failed to enable GitHub Pages: {e}")
             raise
     
     async def add_mit_license(self, repo_name: str) -> None:

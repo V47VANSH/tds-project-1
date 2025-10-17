@@ -1,10 +1,9 @@
 from github import Github, GithubException
 from app.config import settings
-from app.models import Attachment
 import logging
 import base64
 import json
-from typing import Dict, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -190,31 +189,36 @@ SOFTWARE.
         round_num: int,
         brief: str,
         checks: list,
-        attachments: Optional[Sequence[Union[Attachment, Dict[str, object]]]] = None,
+        attachments: Optional[Sequence[Any]] = None,
     ) -> None:
         """
         Store round request data in the repository under data/rounds/
         """
         try:
             repo = self.user.get_repo(repo_name)
-            attachments_payload = []
+            attachments_payload: List[Any] = []
             if attachments:
                 for attachment in attachments:
-                    if isinstance(attachment, Attachment):
-                        attachments_payload.append(attachment.model_dump())
-                    elif isinstance(attachment, dict):
+                    if isinstance(attachment, dict):
                         attachments_payload.append(attachment)
-            
+                    elif hasattr(attachment, "model_dump"):
+                        try:
+                            attachments_payload.append(attachment.model_dump())
+                        except Exception:
+                            attachments_payload.append({"value": str(attachment)})
+                    else:
+                        attachments_payload.append({"value": str(attachment)})
+
             round_data = {
                 "round": round_num,
                 "brief": brief,
                 "checks": checks or [],
-                "attachments": attachments_payload
+                "attachments": attachments_payload,
             }
-            
+
             file_path = f"data/rounds/round_{round_num}.json"
             content = json.dumps(round_data, indent=2)
-            
+
             try:
                 existing_file = repo.get_contents(file_path)
                 repo.update_file(
@@ -232,9 +236,9 @@ SOFTWARE.
                     )
                 else:
                     raise
-            
+
             logger.info(f"Stored round {round_num} data in {repo_name}")
-            
+
         except Exception as e:
             logger.error(f"Error storing round data: {e}")
             raise
@@ -244,10 +248,10 @@ SOFTWARE.
         Get data from all previous rounds
         """
         previous_rounds = []
-        
+
         try:
             repo = self.user.get_repo(repo_name)
-            
+
             for round_num in range(1, current_round):
                 try:
                     file_path = f"data/rounds/round_{round_num}.json"
@@ -261,13 +265,13 @@ SOFTWARE.
                         logger.warning(f"Round {round_num} data not found in {repo_name}")
                     else:
                         raise
-            
+
             return previous_rounds
-            
+
         except Exception as e:
             logger.error(f"Error getting previous rounds data: {e}")
             return []
-    
+
     async def get_repo_files(self, repo_name: str) -> Dict[str, str]:
         """
         Get all files from the repository (excluding data/rounds/)

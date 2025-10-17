@@ -1,9 +1,8 @@
 from openai import OpenAI
 from app.config import settings
-from app.models import Attachment
 import logging
 import json
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ class LLMService:
     async def generate_app(
         self,
         brief: str,
-        attachments: Sequence[Attachment],
+        attachments: Sequence[Any],
         round_num: int,
         previous_rounds: Optional[List[dict]] = None,
         repo_files: Optional[Dict[str, str]] = None,
@@ -29,10 +28,7 @@ class LLMService:
         Generate app files based on the brief using LLM
         """
         logger.info(f"Generating app for round {round_num}")
-        normalized_attachments = [
-            attachment if isinstance(attachment, Attachment) else Attachment.model_validate(attachment)
-            for attachment in attachments
-        ]
+        normalized_attachments = self._normalize_attachments(attachments)
         prompt = self._create_prompt(
             brief,
             normalized_attachments,
@@ -72,7 +68,7 @@ class LLMService:
             logger.error(f"Error generating app: {e}")
             raise
     
-    def _create_prompt(self, brief: str, attachments: Sequence[Attachment], round_num: int,
+    def _create_prompt(self, brief: str, attachments: Sequence[dict], round_num: int,
                       previous_rounds: Optional[List[dict]] = None,
                       repo_files: Optional[Dict[str, str]] = None,
                       checks: Optional[List[str]] = None) -> str:
@@ -84,8 +80,8 @@ class LLMService:
         if attachments:
             attachment_info = "\n=== ATTACHMENTS ===\n"
             attachment_info += "The following attachments are provided as data URIs. Use them in your application:\n\n"
-            serialized_attachments = [attachment.model_dump() for attachment in attachments]
-            attachment_info += f"{json.dumps(serialized_attachments, indent=2)}\n"
+            attachment_info += f"{json.dumps(list(attachments), indent=2)}\n"
+            print(attachment_info)
 
             
             # for filename, data_uri in attachments.items():
@@ -235,22 +231,34 @@ IMPORTANT: Every requirement and check must be met exactly. Read carefully and i
         
         return prompt
 
-    def _extract_attachment_names(
-        self,
-        attachments: Union[Dict[str, object], List[dict], List[str], List[Attachment]],
-    ) -> List[str]:
+    def _normalize_attachments(self, attachments: Sequence[Any]) -> List[dict]:
+        """Convert incoming attachments to dictionaries when possible for prompting."""
+        normalized: List[dict] = []
+        for attachment in attachments:
+            if isinstance(attachment, Mapping):
+                normalized.append(dict(attachment))
+            elif hasattr(attachment, "model_dump"):
+                normalized.append(attachment.model_dump())
+            else:
+                normalized.append({"value": attachment})
+        return normalized
+
+    def _extract_attachment_names(self, attachments: Any) -> List[str]:
         """Normalize attachment representations to a list of display names."""
-        if isinstance(attachments, dict):
-            return list(attachments.keys())
+        if isinstance(attachments, Mapping):
+            return [str(key) for key in attachments.keys()]
         names: List[str] = []
-        if isinstance(attachments, list):
+        if isinstance(attachments, Sequence) and not isinstance(attachments, (str, bytes, bytearray)):
             for attachment in attachments:
-                if isinstance(attachment, Attachment):
-                    names.append(attachment.name)
-                elif isinstance(attachment, dict):
+                if isinstance(attachment, Mapping):
                     name = attachment.get("name") or attachment.get("filename") or attachment.get("id")
                     if name:
                         names.append(str(name))
+                elif hasattr(attachment, "display_name"):
+                    try:
+                        names.append(str(attachment.display_name()))
+                    except Exception:
+                        continue
                 elif isinstance(attachment, str):
                     names.append(attachment)
         return names

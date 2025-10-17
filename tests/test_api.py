@@ -50,3 +50,28 @@ def test_task_endpoint_valid_secret(mocker):
     response = client.post("/task", json=payload)
     assert response.status_code == 200
     assert response.json()["status"] == "accepted"
+
+
+def test_task_endpoint_accepts_filename_attachment(mocker):
+    mocker.patch("app.main.process_task")
+
+    payload = {
+        "email": "test@example.com",
+        "secret": settings.secret_key,
+        "task": "test-task",
+        "round": 1,
+        "nonce": "test-nonce",
+        "brief": "Create a simple app",
+        "checks": ["Check something"],
+        "evaluation_url": "https://example.com/eval",
+        "attachments": [
+            {
+                "filename": "sales.csv",
+                "content": "data:text/csv;base64,QUJDLHBkZg=="
+            }
+        ],
+    }
+
+    response = client.post("/task", json=payload)
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"

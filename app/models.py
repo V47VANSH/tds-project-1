@@ -1,13 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-
-
-class Attachment(BaseModel):
-    """Represents a single attachment passed alongside a task request."""
-    model_config = ConfigDict(extra="allow")
-
-    name: str
-    url: str
+from pydantic import BaseModel, Field
+from typing import Any, List
 
 
 class TaskRequest(BaseModel):
@@ -19,7 +11,7 @@ class TaskRequest(BaseModel):
     brief: str
     checks: List[str] = Field(default_factory=list)
     evaluation_url: str
-    attachments: List[Attachment] = Field(default_factory=list)
+    attachments: List[Any] = Field(default_factory=list)
 
 
 class EvaluationResponse(BaseModel):

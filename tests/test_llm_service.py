@@ -1,5 +1,4 @@
 import pytest
-from app.models import Attachment
 from app.services.llm_service import LLMService
 from unittest.mock import Mock
 
@@ -20,7 +19,7 @@ async def test_generate_app(llm_service, mocker):
         return_value=mock_response
     )
     
-    attachments = [Attachment(name="sample.png", url="data:image/png;base64,AAAA")]
+    attachments = [{"name": "sample.png", "url": "data:image/png;base64,AAAA"}]
     result = await llm_service.generate_app("Create a simple page", attachments, 1)
     
     assert "index.html" in result

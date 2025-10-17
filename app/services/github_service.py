@@ -2,7 +2,8 @@ from github import Github, GithubException
 from app.config import settings
 import logging
 import base64
-from typing import Dict
+import json
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -181,3 +182,109 @@ SOFTWARE.
         except Exception as e:
             logger.error(f"Error adding license: {e}")
             raise
+    
+    async def store_round_data(self, repo_name: str, round_num: int, brief: str, checks: list, attachments: dict) -> None:
+        """
+        Store round request data in the repository under data/rounds/
+        """
+        try:
+            repo = self.user.get_repo(repo_name)
+            
+            round_data = {
+                "round": round_num,
+                "brief": brief,
+                "checks": checks or [],
+                "attachments": attachments or {}
+            }
+            
+            file_path = f"data/rounds/round_{round_num}.json"
+            content = json.dumps(round_data, indent=2)
+            
+            try:
+                existing_file = repo.get_contents(file_path)
+                repo.update_file(
+                    path=file_path,
+                    message=f"Store round {round_num} data",
+                    content=content,
+                    sha=existing_file.sha,
+                )
+            except GithubException as e:
+                if e.status == 404:
+                    repo.create_file(
+                        path=file_path,
+                        message=f"Store round {round_num} data",
+                        content=content,
+                    )
+                else:
+                    raise
+            
+            logger.info(f"Stored round {round_num} data in {repo_name}")
+            
+        except Exception as e:
+            logger.error(f"Error storing round data: {e}")
+            raise
+    
+    async def get_previous_rounds_data(self, repo_name: str, current_round: int) -> list:
+        """
+        Get data from all previous rounds
+        """
+        previous_rounds = []
+        
+        try:
+            repo = self.user.get_repo(repo_name)
+            
+            for round_num in range(1, current_round):
+                try:
+                    file_path = f"data/rounds/round_{round_num}.json"
+                    file_content = repo.get_contents(file_path)
+                    content = base64.b64decode(file_content.content).decode('utf-8')
+                    round_data = json.loads(content)
+                    previous_rounds.append(round_data)
+                    logger.info(f"Retrieved round {round_num} data from {repo_name}")
+                except GithubException as e:
+                    if e.status == 404:
+                        logger.warning(f"Round {round_num} data not found in {repo_name}")
+                    else:
+                        raise
+            
+            return previous_rounds
+            
+        except Exception as e:
+            logger.error(f"Error getting previous rounds data: {e}")
+            return []
+    
+    async def get_repo_files(self, repo_name: str) -> Dict[str, str]:
+        """
+        Get all files from the repository (excluding data/rounds/)
+        """
+        files = {}
+        
+        try:
+            repo = self.user.get_repo(repo_name)
+            
+            def get_contents_recursive(path=""):
+                try:
+                    contents = repo.get_contents(path)
+                    for content in contents:
+                        # Skip data/rounds directory
+                        if content.path.startswith("data/rounds/"):
+                            continue
+                        
+                        if content.type == "dir":
+                            get_contents_recursive(content.path)
+                        else:
+                            try:
+                                file_content = base64.b64decode(content.content).decode('utf-8')
+                                files[content.path] = file_content
+                                logger.info(f"Retrieved file: {content.path}")
+                            except Exception as e:
+                                logger.warning(f"Could not decode file {content.path}: {e}")
+                except Exception as e:
+                    logger.error(f"Error getting contents for path {path}: {e}")
+            
+            get_contents_recursive()
+            return files
+            
+        except Exception as e:
+            logger.error(f"Error getting repo files: {e}")
+            return {}

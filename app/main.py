@@ -34,12 +34,27 @@ async def process_task(task_request: TaskRequest):
     """
     try:
         logger.info(f"Processing task: {task_request.task}, Round: {task_request.round}")
+        logger.info(f"Checks to pass: {task_request.checks}")
+        
+        repo_name = task_request.task
+        
+        # Step 0: For round 2+, get previous rounds data and current repo files
+        previous_rounds = None
+        repo_files = None
+        
+        if task_request.round >= 2:
+            logger.info(f"Fetching previous rounds data and repo files for round {task_request.round}")
+            previous_rounds = await github_service.get_previous_rounds_data(repo_name, task_request.round)
+            repo_files = await github_service.get_repo_files(repo_name)
         
         # Step 1: Generate app using LLM
         files = await llm_service.generate_app(
             task_request.brief,
             task_request.attachments,
-            task_request.round
+            task_request.round,
+            previous_rounds,
+            repo_files,
+            task_request.checks
         )
         
         # Step 2: Generate README
@@ -51,7 +66,6 @@ async def process_task(task_request: TaskRequest):
         files["README.md"] = readme
         
         # Step 3: Create/update GitHub repository
-        repo_name = task_request.task
         if task_request.round == 1:
             repo_url = await github_service.create_repository(
                 repo_name,
@@ -67,13 +81,22 @@ async def process_task(task_request: TaskRequest):
         commit_message = f"Round {task_request.round}: {task_request.brief[:50]}"
         commit_sha = await github_service.push_files(repo_name, files, commit_message)
         
-        # Step 6: Enable GitHub Pages
+        # Step 6: Store current round data in the repo
+        await github_service.store_round_data(
+            repo_name,
+            task_request.round,
+            task_request.brief,
+            task_request.checks,
+            task_request.attachments
+        )
+        
+        # Step 7: Enable GitHub Pages
         pages_url = await github_service.enable_github_pages(repo_name)
         
-        # Step 7: Wait a bit for Pages to deploy
-        await asyncio.sleep(5)
+        # Step 8: Wait for Pages to deploy
+        await asyncio.sleep(10)
         
-        # Step 8: Send evaluation
+        # Step 9: Send evaluation
         evaluation_data = EvaluationResponse(
             email=task_request.email,
             task=task_request.task,

@@ -1,9 +1,10 @@
 from github import Github, GithubException
 from app.config import settings
+from app.models import Attachment
 import logging
 import base64
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
@@ -183,18 +184,32 @@ SOFTWARE.
             logger.error(f"Error adding license: {e}")
             raise
     
-    async def store_round_data(self, repo_name: str, round_num: int, brief: str, checks: list, attachments: dict) -> None:
+    async def store_round_data(
+        self,
+        repo_name: str,
+        round_num: int,
+        brief: str,
+        checks: list,
+        attachments: Optional[Sequence[Union[Attachment, Dict[str, object]]]] = None,
+    ) -> None:
         """
         Store round request data in the repository under data/rounds/
         """
         try:
             repo = self.user.get_repo(repo_name)
+            attachments_payload = []
+            if attachments:
+                for attachment in attachments:
+                    if isinstance(attachment, Attachment):
+                        attachments_payload.append(attachment.model_dump())
+                    elif isinstance(attachment, dict):
+                        attachments_payload.append(attachment)
             
             round_data = {
                 "round": round_num,
                 "brief": brief,
                 "checks": checks or [],
-                "attachments": attachments or {}
+                "attachments": attachments_payload
             }
             
             file_path = f"data/rounds/round_{round_num}.json"

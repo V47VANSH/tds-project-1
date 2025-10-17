@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from app.models import TaskRequest, TaskResponse
 from app.config import settings
 from app.services.llm_service import LLMService
@@ -114,6 +116,14 @@ async def handle_task(
     """
     Main endpoint to receive and process tasks
     """
+    # Print and log the full incoming request payload
+    try:
+        payload_json = task_request.json()
+    except Exception:
+        payload_json = str(task_request)
+    logger.info(f"Request received at /task: {payload_json}")
+    print(f"Request received at /task: {payload_json}")
+
     # Verify secret
     if task_request.secret != settings.secret_key:
         logger.warning(f"Invalid secret received for task: {task_request.task}")
@@ -143,3 +153,22 @@ async def health_check():
         "llm_configured": bool(settings.llm_api_key),
         "username": settings.github_username
     }
+
+
+# Add a handler to log validation errors and the raw request body
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    try:
+        raw_body = (await request.body()).decode("utf-8")
+    except Exception:
+        raw_body = "<could not read body>"
+    logger.error(f"Request validation error: {exc.errors()}")
+    logger.error(f"Raw request body: {raw_body}")
+    print(f"Request validation error: {exc.errors()}")
+    print(f"Raw request body: {raw_body}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "raw_body": raw_body},
+    )
+
+# uv run uvicorn app.main:app --reload --port 8000
